@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* เว้นที่ scrollbar เสมอ หน้าสั้น/ยาวจะได้ไม่ขยับซ้ายขวา */
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  background: theme('colors.bg');
+  color: theme('colors.ink');
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
