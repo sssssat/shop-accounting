@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { recurringDate, type Bill } from './accounting';
+import { recurringDate, type Bill, type LineItem } from './accounting';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -73,26 +73,48 @@ export interface Expense {
   receipt_path: string | null;
   recurring_id: string | null;
   recurring_month: string | null;
+  bill_ref: string | null;
+  items: LineItem[];
 }
 
-const toExpense = (r: Expense): Expense => ({ ...r, amount: Number(r.amount) });
+type ExpenseRow = Omit<Expense, 'items'> & { acct_expense_items?: (LineItem & { sort: number })[] };
+const toExpense = ({ acct_expense_items, ...r }: ExpenseRow): Expense => ({
+  ...r,
+  amount: Number(r.amount),
+  items: [...(acct_expense_items ?? [])]
+    .sort((a, b) => a.sort - b.sort)
+    .map((it) => ({ name: it.name, qty: Number(it.qty), unit_price: Number(it.unit_price) })),
+});
 
 export async function listExpenses(from: string, to: string): Promise<Expense[]> {
   const rows = must(
-    await db().from('acct_expenses').select('*').gte('date', from).lte('date', to).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(5000)
-  ) as Expense[];
+    await db().from('acct_expenses').select('*, acct_expense_items(name, qty, unit_price, sort)').gte('date', from).lte('date', to).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(5000)
+  ) as ExpenseRow[];
   return rows.map(toExpense);
 }
 
-export type NewExpense = Pick<Expense, 'date' | 'vendor' | 'category' | 'pay_method' | 'amount'> & { recurring_id?: string; recurring_month?: string };
+export type NewExpense = Pick<Expense, 'date' | 'vendor' | 'category' | 'pay_method' | 'amount'> & {
+  recurring_id?: string;
+  recurring_month?: string;
+  bill_ref?: string | null;
+};
 
-/** อัปโหลดรูปก่อน แล้วค่อยบันทึก ถ้าบันทึกไม่สำเร็จจะลบรูปทิ้ง */
-export async function addExpense(e: NewExpense, receipt?: Blob | null): Promise<void> {
+/** อัปโหลดรูปก่อน แล้วบันทึกบิลและรายการย่อย ถ้าไม่สำเร็จจะลบสิ่งที่บันทึกไปแล้วทิ้ง */
+export async function addExpense(e: NewExpense, receipt?: Blob | null, items: LineItem[] = []): Promise<void> {
   const path = receipt ? await uploadReceipt(receipt) : null;
-  const { error } = await db().from('acct_expenses').insert({ ...e, receipt_path: path });
-  if (error) {
+  const { data, error } = await db().from('acct_expenses').insert({ ...e, receipt_path: path }).select('id').single();
+  if (error || !data) {
     if (path) await db().storage.from(BUCKET).remove([path]);
-    throw new Error(error.message);
+    throw new Error(error?.message ?? 'บันทึกไม่สำเร็จ');
+  }
+  if (!items.length) return;
+  const res = await db()
+    .from('acct_expense_items')
+    .insert(items.map((it, i) => ({ ...it, expense_id: data.id, sort: i })));
+  if (res.error) {
+    await db().from('acct_expenses').delete().eq('id', data.id);
+    if (path) await db().storage.from(BUCKET).remove([path]);
+    throw new Error('บันทึกรายการย่อยไม่สำเร็จ: ' + res.error.message);
   }
 }
 

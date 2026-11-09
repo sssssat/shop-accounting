@@ -97,6 +97,17 @@ export function buildLedger(
   return rows.sort((a, b) => a.date.localeCompare(b.date) || b.income - a.income);
 }
 
+export interface LineItem {
+  name: string;
+  qty: number;
+  unit_price: number;
+}
+
+/** ยอดรวมรายการย่อย ปัด 2 ตำแหน่ง */
+export function itemsTotal(items: LineItem[]): number {
+  return Math.round(items.reduce((s, it) => s + it.qty * it.unit_price, 0) * 100) / 100;
+}
+
 export interface ImportRow {
   line: number;
   date: string;
