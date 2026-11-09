@@ -69,7 +69,11 @@ export function App() {
   return (
     <div className="flex min-h-screen flex-wrap">
       <nav className="flex flex-[1_1_220px] flex-col gap-1.5 border-r border-border bg-surface p-3.5 pt-5 lg:max-w-[240px]">
-        <div className="px-3 pb-3.5 text-lg font-semibold">บัญชีร้าน</div>
+        <div className="flex items-center gap-2.5 px-3 pb-3.5 text-lg font-semibold">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.png" alt="" className="h-9 w-9 shrink-0 rounded-lg" />
+          บัญชีร้าน
+        </div>
         {NAV.map(([id, label]) => (
           <button
             key={id}
@@ -136,6 +140,8 @@ function Login({ onDone, notify }: { onDone: () => void; notify: Notify }) {
   return (
     <div className="flex min-h-screen items-center justify-center p-5">
       <form onSubmit={submit} className="flex w-full max-w-[400px] flex-col gap-3 rounded-2xl border border-border bg-surface p-7">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="" className="mx-auto h-28 w-28 rounded-2xl" />
         <div>
           <h1 className="text-2xl font-semibold">บัญชีร้าน</h1>
           <p className="mt-1 text-sm text-dim">เข้าสู่ระบบด้วยบัญชีเจ้าของร้านเดียวกับ POS</p>
