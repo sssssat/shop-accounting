@@ -92,11 +92,22 @@ export async function exportPeriod(label: string, from: string, to: string): Pro
   );
   if (bl.rowCount >= blFirst) sumRow(bl, blFirst, [7], 7);
 
-  const ex = sheet('รายจ่าย', `รายจ่าย ${label}`, [14, 26, 18, 12, 16, 12]);
-  header(ex, ['วันที่', 'ผู้ขาย', 'หมวด', 'วิธีจ่าย', 'ยอดเงิน', 'หลักฐาน']);
+  const ex = sheet('รายจ่าย', `รายจ่าย ${label}`, [14, 26, 16, 18, 12, 16, 12]);
+  header(ex, ['วันที่', 'ผู้ขาย', 'เลขที่บิล', 'หมวด', 'วิธีจ่าย', 'ยอดเงิน', 'หลักฐาน']);
   const exFirst = ex.rowCount + 1;
-  [...expenses].reverse().forEach((e) => body(ex, [toDate(e.date), e.vendor, e.category, e.pay_method, e.amount, e.receipt_path ? 'มี' : 'ไม่มี'], [5], 1));
-  if (ex.rowCount >= exFirst) sumRow(ex, exFirst, [5], 6);
+  const ordered = [...expenses].reverse();
+  ordered.forEach((e) => body(ex, [toDate(e.date), e.vendor, e.bill_ref ?? '', e.category, e.pay_method, e.amount, e.receipt_path ? 'มี' : 'ไม่มี'], [6], 1));
+  if (ex.rowCount >= exFirst) sumRow(ex, exFirst, [6], 7);
+
+  // รายการย่อยของแต่ละบิล (เฉพาะบิลที่กรอกรายการไว้)
+  const withItems = ordered.filter((e) => e.items.length > 0);
+  if (withItems.length) {
+    const it = sheet('รายการในบิล', `รายการในบิลรายจ่าย ${label}`, [14, 24, 16, 30, 10, 14, 14]);
+    header(it, ['วันที่', 'ผู้ขาย', 'เลขที่บิล', 'รายการ', 'จำนวน', 'ราคาต่อหน่วย', 'รวม']);
+    const itFirst = it.rowCount + 1;
+    withItems.forEach((e) => e.items.forEach((x) => body(it, [toDate(e.date), e.vendor, e.bill_ref ?? '', x.name, x.qty, x.unit_price, x.qty * x.unit_price], [6, 7], 1)));
+    sumRow(it, itFirst, [7], 7);
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));

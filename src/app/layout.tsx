@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: 'บัญชีร้าน',
   description: 'รายรับจาก POS รายจ่าย รูปใบเสร็จ และรายงาน',
   robots: { index: false, follow: false },
+  icons: { icon: '/icons/favicon-64.png', apple: '/icons/apple-touch-icon.png' },
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };

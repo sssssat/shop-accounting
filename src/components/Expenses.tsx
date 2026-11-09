@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { baht, CATEGORIES, monthRange, parseImport, PAY_METHODS, thaiDate, thaiMonth, thisMonth, today, type ImportRow } from '@/lib/accounting';
+import { baht, CATEGORIES, itemsTotal, monthRange, parseImport, PAY_METHODS, thaiDate, thaiMonth, thisMonth, today, type ImportRow } from '@/lib/accounting';
 import {
   addExpense,
   addExpenses,
@@ -28,6 +28,7 @@ export function Expenses({ notify, initialFilter }: { notify: Notify; initialFil
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<'list' | 'add' | 'import'>('list');
   const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState<Expense | null>(null);
 
   const load = useCallback(() => {
     const { from, to } = monthRange(month);
@@ -166,9 +167,21 @@ export function Expenses({ notify, initialFilter }: { notify: Notify; initialFil
                 }}
               />
               <span className="text-dim">{thaiDate(e.date)}</span>
-              <span className="flex flex-wrap items-center gap-2">
-                <b className="font-medium">{e.vendor}</b>
-                {isRecurring(e) && <span className="rounded-xl bg-[#F3F4F6] px-2.5 py-0.5 text-xs font-medium text-[#3F4652]">ประจำ</span>}
+              <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-2">
+                  <b className="font-medium">{e.vendor}</b>
+                  {isRecurring(e) && <span className="rounded-xl bg-[#F3F4F6] px-2.5 py-0.5 text-xs font-medium text-[#3F4652]">ประจำ</span>}
+                </span>
+                {(e.bill_ref || e.items.length > 0) && (
+                  <span className="flex flex-wrap items-center gap-x-3 text-[13px] text-dim">
+                    {e.bill_ref && <span>บิล {e.bill_ref}</span>}
+                    {e.items.length > 0 && (
+                      <button type="button" onClick={() => setViewing(e)} className="min-h-8 font-medium text-primary underline">
+                        {e.items.length} รายการ
+                      </button>
+                    )}
+                  </span>
+                )}
               </span>
               <span className="text-dim">{e.category}</span>
               <span className="text-dim">{e.pay_method}</span>
@@ -203,13 +216,45 @@ export function Expenses({ notify, initialFilter }: { notify: Notify; initialFil
           ))}
         </Card>
       )}
+      {viewing && (
+        <Modal title={`${viewing.vendor}${viewing.bill_ref ? ` • บิล ${viewing.bill_ref}` : ''}`} onClose={() => setViewing(null)}>
+          <div className="text-sm text-dim">
+            {thaiDate(viewing.date)} • {viewing.category} • {viewing.pay_method}
+          </div>
+          <div className="mt-3">
+            {viewing.items.map((it, i) => (
+              <div key={i} className="flex justify-between gap-3 border-t border-line py-2.5">
+                <span>
+                  {it.name} <span className="text-dim">× {it.qty} @ {baht(it.unit_price)}</span>
+                </span>
+                <span>{baht(it.qty * it.unit_price)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between gap-3 border-t border-[#D1D5DB] py-3 text-[17px] font-semibold">
+            <span>รวม</span>
+            <span>{baht(viewing.amount)}</span>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
 
+interface ItemDraft {
+  name: string;
+  qty: string;
+  price: string;
+}
+const blankItem = (): ItemDraft => ({ name: '', qty: '1', price: '' });
+
 function AddExpense({ notify, onDone }: { notify: Notify; onDone: () => void }) {
-  const blank = { date: today(), vendor: '', amount: '', category: CATEGORIES[0], pay_method: PAY_METHODS[0] };
+  const blank = { date: today(), vendor: '', bill_ref: '', amount: '', category: CATEGORIES[0], pay_method: PAY_METHODS[0] };
   const [form, setForm] = useState(blank);
+  const [items, setItems] = useState<ItemDraft[]>([]);
+  const parsedItems = items.map((it) => ({ name: it.name.trim(), qty: Number(it.qty), unit_price: Number(it.price) }));
+  const itemsSum = itemsTotal(parsedItems.filter((it) => it.qty > 0 && it.unit_price >= 0));
+  const setItem = (i: number, patch: Partial<ItemDraft>) => setItems(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   const [receipt, setReceipt] = useState<Blob | null>(null);
   const [vendors, setVendors] = useState<{ vendor: string; category: string; pay_method: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -219,15 +264,23 @@ function AddExpense({ notify, onDone }: { notify: Notify; onDone: () => void }) 
   }, []);
 
   async function save(next: boolean) {
-    const amount = parseFloat(form.amount);
+    // มีรายการย่อย: ยอดบิล = ผลรวมรายการ
+    if (parsedItems.some((it) => !it.name || !(it.qty > 0) || !(it.unit_price >= 0)))
+      return notify('รายการย่อยต้องมีชื่อ จำนวนมากกว่า 0 และราคา', true);
+    const amount = items.length ? itemsSum : parseFloat(form.amount);
     if (!form.date || !form.vendor.trim() || !(amount > 0)) return notify('กรุณาใส่วันที่ ผู้ขาย และยอดเงิน', true);
     setBusy(true);
     try {
-      await addExpense({ date: form.date, vendor: form.vendor.trim(), category: form.category, pay_method: form.pay_method, amount }, receipt);
+      await addExpense(
+        { date: form.date, vendor: form.vendor.trim(), bill_ref: form.bill_ref.trim() || null, category: form.category, pay_method: form.pay_method, amount },
+        receipt,
+        parsedItems
+      );
       notify(next ? 'บันทึกแล้ว เพิ่มรายการต่อได้เลย' : 'บันทึกรายจ่ายแล้ว');
       if (next) {
         // วันที่มักเป็นวันเดียวกันเมื่อกรอกหลายใบ จึงคงไว้
         setForm({ ...blank, date: form.date });
+        setItems([]);
         setReceipt(null);
       } else onDone();
     } catch (e) {
@@ -258,7 +311,43 @@ function AddExpense({ notify, onDone }: { notify: Notify; onDone: () => void }) 
           </div>
         )}
         <Field label="ผู้ขาย" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
-        <Field label="ยอดเงิน (บาท)" inputMode="decimal" placeholder="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="!h-[58px] text-right text-[26px] font-semibold" />
+        <Field label="เลขที่ / ชื่อบิล (ไม่บังคับ)" placeholder="เช่น INV-0123" value={form.bill_ref} onChange={(e) => setForm({ ...form, bill_ref: e.target.value })} />
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="font-medium">รายการในบิล (ไม่บังคับ)</span>
+            <button type="button" onClick={() => setItems([...items, blankItem()])} className="min-h-11 px-2 font-semibold text-primary">
+              + เพิ่มรายการ
+            </button>
+          </div>
+          {items.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-[1fr_64px_96px_44px] gap-2 text-[13px] text-dim">
+                <span>ชื่อสินค้า / รายการ</span>
+                <span>จำนวน</span>
+                <span>ราคาต่อหน่วย</span>
+                <span />
+              </div>
+              {items.map((it, i) => (
+                <div key={i} className="grid grid-cols-[1fr_64px_96px_44px] items-center gap-2">
+                  <input aria-label={`ชื่อรายการ ${i + 1}`} value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} className="h-11 min-w-0 rounded-[10px] border border-[#D1D5DB] px-2.5 outline-none focus:border-primary" />
+                  <input aria-label={`จำนวน ${i + 1}`} inputMode="decimal" value={it.qty} onChange={(e) => setItem(i, { qty: e.target.value })} className="h-11 min-w-0 rounded-[10px] border border-[#D1D5DB] px-2 text-right outline-none focus:border-primary" />
+                  <input aria-label={`ราคาต่อหน่วย ${i + 1}`} inputMode="decimal" placeholder="0" value={it.price} onChange={(e) => setItem(i, { price: e.target.value })} className="h-11 min-w-0 rounded-[10px] border border-[#D1D5DB] px-2 text-right outline-none focus:border-primary" />
+                  <button type="button" aria-label={`ลบรายการ ${i + 1}`} onClick={() => setItems(items.filter((_, j) => j !== i))} className="h-11 rounded-[10px] text-lg text-danger">
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {items.length > 0 ? (
+          <div className="flex items-center justify-between rounded-[10px] bg-[#F3F4F6] px-4 py-3">
+            <span className="font-medium">ยอดเงิน (รวมจากรายการ)</span>
+            <b className="text-[26px] font-semibold">{baht(itemsSum)}</b>
+          </div>
+        ) : (
+          <Field label="ยอดเงิน (บาท)" inputMode="decimal" placeholder="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="!h-[58px] text-right text-[26px] font-semibold" />
+        )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2.5">
           <Field label="วันที่" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           <Select label="หมวด" options={CATEGORIES} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />

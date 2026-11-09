@@ -1,4 +1,4 @@
-import { billNet, buildLedger, groupBillsByDay, monthRange, parseDate, parseImport, recurringDate, type Bill } from '../src/lib/accounting';
+import { billNet, buildLedger, itemsTotal, groupBillsByDay, monthRange, parseDate, parseImport, recurringDate, type Bill } from '../src/lib/accounting';
 
 let pass = 0;
 let fail = 0;
@@ -39,6 +39,9 @@ check('เตือนยอด', imp[3].error === 'ยอดเงินไม�
 
 const ledger = buildLedger([bill('a', '2026-11-01T01:00:00Z', 100), bill('v', '2026-11-03T01:00:00Z', 9, 'void')], [{ date: '2026-11-02', source: 'เดลิเวอรี', amount: 50 }], [{ date: '2026-11-01', vendor: 'ตลาด', category: 'ซื้อสินค้า', amount: 30 }]);
 check('สมุดรับ-จ่ายเรียงวัน ไม่รวมวันที่มีแต่บิลยกเลิก', ledger.length === 3 && ledger[0].income === 100 && ledger[1].expense === 30 && ledger[2].income === 50);
+
+check('รวมรายการย่อย', itemsTotal([{ name: 'ไข่', qty: 3, unit_price: 4.5 }, { name: 'ผัก', qty: 1, unit_price: 20 }]) === 33.5);
+check('ไม่มีรายการย่อย = 0', itemsTotal([]) === 0);
 
 console.log(`ผลรวม: ผ่าน ${pass} / ล้มเหลว ${fail}`);
 if (fail) process.exit(1);
